@@ -1,0 +1,84 @@
+name: build-sh-elf-gcc
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            base-devel
+            git
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-binutils
+            mingw-w64-x86_64-gmp
+            mingw-w64-x86_64-mpc
+            mingw-w64-x86_64-mpfr
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-cmake
+            wget
+            python
+          msystem: MINGW64
+
+      - name: Build binutils (sh-elf)
+        shell: msys2 {0}
+        run: |
+          set -eux
+          mkdir -p $GITHUB_WORKSPACE/.build/binutils && cd $GITHUB_WORKSPACE/.build/binutils
+          BINUTILS_VER=2.42
+          wget -q https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_VER}.tar.xz
+          tar xf binutils-${BINUTILS_VER}.tar.xz
+          mkdir b && cd b
+          ../binutils-${BINUTILS_VER}/configure --target=sh-elf --prefix=$GITHUB_WORKSPACE/opt --disable-nls --with-zlib --disable-werror
+          make -j$(nproc)
+          make install
+
+      - name: Build GCC (stage1: gcc + libgcc, no libs C)
+        shell: msys2 {0}
+        run: |
+          set -eux
+          mkdir -p $GITHUB_WORKSPACE/.build/gcc && cd $GITHUB_WORKSPACE/.build/gcc
+          GCC_VER=13.2.0
+          wget -q https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VER}/gcc-${GCC_VER}.tar.xz
+          tar xf gcc-${GCC_VER}.tar.xz
+          cd gcc-${GCC_VER}
+          contrib/download_prerequisites
+          cd ..
+          mkdir b && cd b
+          export PATH="$GITHUB_WORKSPACE/opt/bin:$PATH"
+          ../gcc-${GCC_VER}/configure --target=sh-elf --prefix=$GITHUB_WORKSPACE/opt --disable-nls --enable-languages=c --without-headers
+          make all-gcc -j$(nproc)
+          make all-target-libgcc -j$(nproc)
+          make install-gcc
+          make install-target-libgcc
+
+      - name: Package toolchain
+        shell: msys2 {0}
+        run: |
+          set -eux
+          cd $GITHUB_WORKSPACE
+          mkdir -p dist
+          # Si algún día quieres prefijo sh2eb-elf-, descomenta este bloque:
+          # for f in opt/bin/sh-elf-*; do
+          #   base=$(basename "$f")
+          #   tgt="${base/sh-elf-/sh2eb-elf-}"
+          #   cp "$f" "opt/bin/${tgt}"
+          # done
+          (cd opt && tar -cJf ../dist/sh-elf-toolchain-windows.txz .)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sh-elf-toolchain-windows
+          path: dist/sh-elf-toolchain-windows.txz
+          if-no-files-found: error
