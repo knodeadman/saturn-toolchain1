@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -14,66 +15,67 @@ jobs:
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
+          msystem: MINGW64
           update: true
+          # Importante: una sola línea (o plegado) sin viñetas YAML
           install: >-
-            base-devel
-            git
+            base-devel git
             mingw-w64-x86_64-toolchain
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-binutils
             mingw-w64-x86_64-gmp
             mingw-w64-x86_64-mpc
             mingw-w64-x86_64-mpfr
-            mingw-w64-x86_64-ninja
             mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
             wget
-            python
-          msystem: MINGW64
 
       - name: Build binutils (sh-elf)
         shell: msys2 {0}
         run: |
-          set -eux
-          mkdir -p $GITHUB_WORKSPACE/.build/binutils && cd $GITHUB_WORKSPACE/.build/binutils
+          set -euxo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.build/binutils"
+          cd "$GITHUB_WORKSPACE/.build/binutils"
           BINUTILS_VER=2.42
           wget -q https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_VER}.tar.xz
           tar xf binutils-${BINUTILS_VER}.tar.xz
           mkdir b && cd b
-          ../binutils-${BINUTILS_VER}/configure --target=sh-elf --prefix=$GITHUB_WORKSPACE/opt --disable-nls --with-zlib --disable-werror
-          make -j$(nproc)
+          ../binutils-${BINUTILS_VER}/configure \
+            --target=sh-elf \
+            --prefix="$GITHUB_WORKSPACE/opt" \
+            --disable-nls --with-zlib --disable-werror
+          make -j2
           make install
 
-      - name: Build GCC (stage1: gcc + libgcc, no libs C)
+      - name: Build GCC (stage1: gcc + libgcc)
         shell: msys2 {0}
         run: |
-          set -eux
-          mkdir -p $GITHUB_WORKSPACE/.build/gcc && cd $GITHUB_WORKSPACE/.build/gcc
+          set -euxo pipefail
+          mkdir -p "$GITHUB_WORKSPACE/.build/gcc"
+          cd "$GITHUB_WORKSPACE/.build/gcc"
           GCC_VER=13.2.0
           wget -q https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VER}/gcc-${GCC_VER}.tar.xz
           tar xf gcc-${GCC_VER}.tar.xz
           cd gcc-${GCC_VER}
-          contrib/download_prerequisites
+          ./contrib/download_prerequisites
           cd ..
           mkdir b && cd b
           export PATH="$GITHUB_WORKSPACE/opt/bin:$PATH"
-          ../gcc-${GCC_VER}/configure --target=sh-elf --prefix=$GITHUB_WORKSPACE/opt --disable-nls --enable-languages=c --without-headers
-          make all-gcc -j$(nproc)
-          make all-target-libgcc -j$(nproc)
+          ../gcc-${GCC_VER}/configure \
+            --target=sh-elf \
+            --prefix="$GITHUB_WORKSPACE/opt" \
+            --disable-nls \
+            --enable-languages=c \
+            --without-headers
+          make all-gcc -j2
+          make all-target-libgcc -j2
           make install-gcc
           make install-target-libgcc
 
       - name: Package toolchain
         shell: msys2 {0}
         run: |
-          set -eux
-          cd $GITHUB_WORKSPACE
+          set -euxo pipefail
+          cd "$GITHUB_WORKSPACE"
           mkdir -p dist
-          # Si algún día quieres prefijo sh2eb-elf-, descomenta este bloque:
-          # for f in opt/bin/sh-elf-*; do
-          #   base=$(basename "$f")
-          #   tgt="${base/sh-elf-/sh2eb-elf-}"
-          #   cp "$f" "opt/bin/${tgt}"
-          # done
           (cd opt && tar -cJf ../dist/sh-elf-toolchain-windows.txz .)
 
       - name: Upload artifact
