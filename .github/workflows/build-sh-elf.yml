@@ -7,7 +7,6 @@ on:
 jobs:
   build:
     runs-on: windows-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -17,7 +16,6 @@ jobs:
         with:
           msystem: MINGW64
           update: true
-          # Importante: una sola línea (o plegado) sin viñetas YAML
           install: >-
             base-devel git
             mingw-w64-x86_64-toolchain
@@ -28,49 +26,41 @@ jobs:
             mingw-w64-x86_64-ninja
             wget
 
-      - name: Build binutils (sh-elf)
+      - name: Build binutils
         shell: msys2 {0}
         run: |
           set -euxo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/.build/binutils"
-          cd "$GITHUB_WORKSPACE/.build/binutils"
+          mkdir -p "$GITHUB_WORKSPACE/.b/binutils"
+          cd "$GITHUB_WORKSPACE/.b/binutils"
           BINUTILS_VER=2.42
           wget -q https://ftp.gnu.org/gnu/binutils/binutils-${BINUTILS_VER}.tar.xz
           tar xf binutils-${BINUTILS_VER}.tar.xz
-          mkdir b && cd b
-          ../binutils-${BINUTILS_VER}/configure \
-            --target=sh-elf \
-            --prefix="$GITHUB_WORKSPACE/opt" \
-            --disable-nls --with-zlib --disable-werror
+          mkdir build && cd build
+          ../binutils-${BINUTILS_VER}/configure --target=sh-elf --prefix="$GITHUB_WORKSPACE/opt" --disable-nls --with-zlib --disable-werror
           make -j2
           make install
 
-      - name: Build GCC (stage1: gcc + libgcc)
+      - name: Build GCC stage1 (c + libgcc)
         shell: msys2 {0}
         run: |
           set -euxo pipefail
-          mkdir -p "$GITHUB_WORKSPACE/.build/gcc"
-          cd "$GITHUB_WORKSPACE/.build/gcc"
+          mkdir -p "$GITHUB_WORKSPACE/.b/gcc"
+          cd "$GITHUB_WORKSPACE/.b/gcc"
           GCC_VER=13.2.0
           wget -q https://ftp.gnu.org/gnu/gcc/gcc-${GCC_VER}/gcc-${GCC_VER}.tar.xz
           tar xf gcc-${GCC_VER}.tar.xz
           cd gcc-${GCC_VER}
           ./contrib/download_prerequisites
           cd ..
-          mkdir b && cd b
+          mkdir build && cd build
           export PATH="$GITHUB_WORKSPACE/opt/bin:$PATH"
-          ../gcc-${GCC_VER}/configure \
-            --target=sh-elf \
-            --prefix="$GITHUB_WORKSPACE/opt" \
-            --disable-nls \
-            --enable-languages=c \
-            --without-headers
+          ../gcc-${GCC_VER}/configure --target=sh-elf --prefix="$GITHUB_WORKSPACE/opt" --disable-nls --enable-languages=c --without-headers
           make all-gcc -j2
           make all-target-libgcc -j2
           make install-gcc
           make install-target-libgcc
 
-      - name: Package toolchain
+      - name: Package
         shell: msys2 {0}
         run: |
           set -euxo pipefail
